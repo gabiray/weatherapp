@@ -96,6 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
+                  // Login action
                   onPressed: () async {
                     final email = _emailController.text.trim();
                     final password = _passwordController.text.trim();

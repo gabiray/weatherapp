@@ -15,12 +15,16 @@ class WeatherScreen extends StatefulWidget {
 }
 
 class _WeatherScreenState extends State<WeatherScreen> {
+  // --- STATE VARIABLES ---
+  // Index-ul curent pentru BottomNavigationBar
   int _currentIndex = 0;
 
+  // Controller pentru câmpul de căutare
   final TextEditingController _searchController = TextEditingController();
-  bool _isLoading = false;
+  bool _isLoading = false; 
   String? _error;
 
+  // Datele meteo
   String _locationLabel = 'Se încarcă...';
   double? _currentTemp;
   String _todayDescription = '';
@@ -35,6 +39,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
   List<_DailyForecast> _dailyForecast = [];
   List<_HourlyForecast> _hourlyForecast = [];
 
+  // --- INIT STATE ---
   @override
   void initState() {
     super.initState();
@@ -47,12 +52,14 @@ class _WeatherScreenState extends State<WeatherScreen> {
     bool serviceEnabled;
     LocationPermission permission;
 
+    // Verificăm dacă serviciile de locație sunt activate
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       _searchAndLoadWeather('Bucuresti');
       return;
     }
 
+    // Verificăm permisiunile
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -73,6 +80,8 @@ class _WeatherScreenState extends State<WeatherScreen> {
         lon: position.longitude,
         labelFromGeo: 'Locația Ta',
       );
+
+      // Actualizăm numele orașului pe baza coordonatelor
       _updateCityNameFromCoords(position.latitude, position.longitude);
     } catch (e) {
       _searchAndLoadWeather('Bucuresti');
@@ -93,6 +102,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
   }
 
   // --- API CALLS ---
+  // Căutare oraș și încărcare meteo
   Future<void> _searchAndLoadWeather(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
@@ -105,7 +115,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     try {
       final geoUrl = Uri.parse(
         'https://geocoding-api.open-meteo.com/v1/search?name=${Uri.encodeComponent(trimmed)}&count=1&language=en&format=json',
-      );
+      ); // Folosim API-ul de geocodare Open-Meteo
       final geoRes = await http.get(geoUrl);
       if (geoRes.statusCode != 200) throw Exception('Geocoding failed');
       final geoJson = jsonDecode(geoRes.body);
@@ -129,6 +139,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     }
   }
 
+  // Încărcare date meteo după coordonate
   Future<void> _loadWeatherByCoords({
     required double lat,
     required double lon,
@@ -139,12 +150,13 @@ class _WeatherScreenState extends State<WeatherScreen> {
       _error = null;
     });
     try {
-      // URL MODIFICAT: Am adăugat "is_day" la hourly
+
+      // Apel API pentru date meteo
       final weatherUrl = Uri.parse(
         'https://api.open-meteo.com/v1/forecast'
         '?latitude=$lat&longitude=$lon'
         '&current_weather=true'
-        '&hourly=temperature_2m,weathercode,relativehumidity_2m,surface_pressure,is_day' // <--- AICI E CHEIA (is_day)
+        '&hourly=temperature_2m,weathercode,relativehumidity_2m,surface_pressure,is_day'
         '&daily=temperature_2m_max,temperature_2m_min,weathercode,windspeed_10m_max,precipitation_probability_max'
         '&forecast_days=7'
         '&timezone=auto',
@@ -152,6 +164,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
       final weatherRes = await http.get(weatherUrl);
       if (weatherRes.statusCode != 200) throw Exception('Weather API failed');
 
+      // Procesare răspuns
       final weatherJson = jsonDecode(weatherRes.body);
       
       // 1. Current Weather
@@ -159,7 +172,8 @@ class _WeatherScreenState extends State<WeatherScreen> {
       final double temp = (current['temperature'] as num).toDouble();
       final int code = (current['weathercode'] as num).toInt();
       final double wind = (current['windspeed'] as num).toDouble();
-      // Aflăm dacă e zi sau noapte chiar acum (1 = zi, 0 = noapte)
+
+      // Aflam daca e zi sau noapte chiar acum (1 = zi, 0 = noapte)
       final int isDayNow = (current['is_day'] as num).toInt(); 
       
       String niceTime = '--:--';
@@ -173,7 +187,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
       final List hTimes = hourlyData['time'];
       final List hTemps = hourlyData['temperature_2m'];
       final List hCodes = hourlyData['weathercode'];
-      final List hIsDay = hourlyData['is_day'] ?? []; // Lista cu 0/1 pentru fiecare oră
+      final List hIsDay = hourlyData['is_day'] ?? []; 
       
       final now = DateTime.now();
       int startIndex = 0;
@@ -190,7 +204,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
          final tTemp = (hTemps[i] as num).toDouble();
          final tCode = (hCodes[i] as num).toInt();
          
-         // Luăm flag-ul de zi/noapte specific orei respective
+         // Luam flag-ul de zi/noapte specific orei respective
          final bool isHourDay = (hIsDay.isNotEmpty && i < hIsDay.length) 
             ? (hIsDay[i] == 1) 
             : true; // Fallback
@@ -200,7 +214,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
          tempHourlyList.add(_HourlyForecast(
            time: i == startIndex ? 'Acum' : hourLabel,
            temp: '${tTemp.round()}°',
-           icon: _emojiForCode(tCode, isDay: isHourDay), // <--- Trimitem isDay aici
+           icon: _emojiForCode(tCode, isDay: isHourDay), 
          ));
       }
 
@@ -239,7 +253,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
         tempDailyList.add(_DailyForecast(
           day: dayLabel,
           fullDate: '${date.day}/${date.month}',
-          icon: _emojiForCode(wCode, isDay: true), // Pentru daily, arătăm mereu iconița de zi
+          icon: _emojiForCode(wCode, isDay: true), 
           high: '${tMax.round()}°',
           low: '${tMin.round()}°',
           description: _descriptionForCode(wCode),
@@ -248,11 +262,12 @@ class _WeatherScreenState extends State<WeatherScreen> {
         ));
       }
 
+      // Actualizăm starea cu noile date
       setState(() {
         _locationLabel = labelFromGeo ?? 'Locație Custom';
         _currentTemp = temp;
         _todayDescription = _descriptionForCode(code);
-        // Folosim isDayNow pentru iconița mare principală
+        
         _todayEmoji = _emojiForCode(code, isDay: isDayNow == 1); 
         _windSpeed = wind;
         _humidity = humidity;
@@ -271,27 +286,28 @@ class _WeatherScreenState extends State<WeatherScreen> {
   }
 
   // --- CALLBACKS ---
+  // Callback când se selectează o locație pe hartă
   void _onMapLocationSelected(LatLng coords, String? name) {
     setState(() => _currentIndex = 0);
     _loadWeatherByCoords(lat: coords.latitude, lon: coords.longitude, labelFromGeo: name);
   }
 
+  // Callback când se selectează un oraș favorit
   void _onFavoriteSelected(double lat, double lon, String name) {
     setState(() => _currentIndex = 0);
     _loadWeatherByCoords(lat: lat, lon: lon, labelFromGeo: name);
   }
 
-  // --- HELPERE ICONIȚE ---
-  
-  // Acum acceptă parametrul `isDay` (default true)
+  // --- HELPERE ICONIȚE --- 
+  // Acum accepta parametrul `isDay` (default true)
   String _emojiForCode(int code, {bool isDay = true}) {
     if (code == 0) {
-      return isDay ? '☀️' : '🌙'; // Senin: Soare sau Lună
+      return isDay ? '☀️' : '🌙'; // Senin: Soare sau Luna
     }
     if (code == 1 || code == 2 || code == 3) {
       return isDay ? '⛅' : '☁️'; // Nori: Soare cu nori sau Nori simpli (noaptea)
     }
-    if (code <= 48) return '🌫'; // Ceață
+    if (code <= 48) return '🌫'; // Ceata
     if (code <= 67) return '🌦'; // Ploaie
     if (code <= 77) return '❄️'; // Ninsoare
     if (code <= 82) return '🌧'; // Averse
@@ -313,7 +329,6 @@ class _WeatherScreenState extends State<WeatherScreen> {
   }
 
   // --- UI COMPONENTS ---
-
   void _showForecastSheet() {
     showModalBottomSheet(
       context: context,
@@ -442,7 +457,8 @@ class _WeatherScreenState extends State<WeatherScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    // --- MAIN SCAFFOLD ---
+    return Scaffold( 
       backgroundColor: Colors.blue[50],
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
@@ -463,6 +479,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
           ],
         ),
       ),
+      // Folosim IndexedStack pentru a păstra starea fiecărui ecran
       body: IndexedStack(
         index: _currentIndex,
         children: [
@@ -475,8 +492,9 @@ class _WeatherScreenState extends State<WeatherScreen> {
     );
   }
 
+  // --- HOME SCREEN CONTENT ---
   Widget _buildHomeContent() {
-    final bool hasToday = _currentTemp != null;
+    final bool hasToday = _currentTemp != null; // Verificăm dacă avem date pentru ziua curentă
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -491,7 +509,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: const [
-                    Text('Salut,', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.w500)),
+                    Text('Bine ai venit,', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.w500)),
                     Text('WeatherApp', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
                   ],
                 ),
@@ -514,7 +532,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
         ),
         child: TextField(
           controller: _searchController,
-          // 1. Asta schimbă tasta "Enter" de pe tastatură în "Lupă/Search"
+          
           textInputAction: TextInputAction.search, 
           
           decoration: InputDecoration(
@@ -522,19 +540,17 @@ class _WeatherScreenState extends State<WeatherScreen> {
             hintStyle: const TextStyle(color: Colors.black38),
             border: InputBorder.none,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            
-            // 2. Folosim suffixIcon (dreapta) ca Buton
+                        
             suffixIcon: IconButton(
               icon: const Icon(Icons.search, color: Colors.blueAccent),
               onPressed: () {
-                // Ascundem tastatura când apăsăm pe lupă
+                // Ascundem tastatura cand apasam pe lupa
                 FocusScope.of(context).unfocus(); 
                 _searchAndLoadWeather(_searchController.text);
               },
             ),
           ),
           
-          // Funcționează și când dai "Search" de pe tastatură
           onSubmitted: (value) {
             FocusScope.of(context).unfocus();
             _searchAndLoadWeather(value);
@@ -545,7 +561,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     
     const SizedBox(width: 10),
     
-    // Butonul GPS (Rămâne la fel)
+    // Butonul GPS 
     Container(
       decoration: BoxDecoration(
           color: Colors.white, 
@@ -599,6 +615,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     );
   }
 
+  // Card pentru ziua curentă
   Widget _buildTodayCard() {
     return Container(
       width: double.infinity,
@@ -657,6 +674,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
     );
   }
 
+  // Item detaliu (vânt, umiditate, presiune)
   Widget _buildDetailItem(IconData icon, String value) {
     return Row(
       children: [

@@ -1,12 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart'; // <--- 1. Import Nou
+// import 'package:google_sign_in/google_sign_in.dart'; // <--- 1. Import Nou
 
 class AuthService {
+  // Instanța FirebaseAuth
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // --- GOOGLE SIGN-IN ---
   // final GoogleSignIn _googleSignIn = GoogleSignIn(); // <--- 2. Instanță GoogleSignIn
 
+  // Flux de autentificare
   Stream<User?> get authStateChanges => _auth.authStateChanges();
   User? get currentUser => _auth.currentUser;
 

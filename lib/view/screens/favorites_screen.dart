@@ -16,6 +16,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   List<FavoriteCity> _favorites = [];
   bool _isLoading = true;
 
+  // Încarcăm orașele favorite la inițializare
   @override
   void initState() {
     super.initState();
@@ -87,7 +88,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                           onPressed: () => _deleteCity(city),
                         ),
                         onTap: () {
-                          // Aici e magia: trimitem datele înapoi la Home Screen
+                          // Aici trimitem datele înapoi la Home Screen
                           widget.onCitySelected(city.lat, city.lon, city.name);
                         },
                       ),

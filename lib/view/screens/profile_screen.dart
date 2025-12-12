@@ -13,6 +13,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final AuthService _authService = AuthService();
   final TextEditingController _passwordController = TextEditingController();
+
+  // Obținerea utilizatorului curent
   final User? user = FirebaseAuth.instance.currentUser;
   
   bool _isLoading = false;
@@ -58,6 +60,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+
+    // Verificăm dacă utilizatorul s-a autentificat prin Google
     bool isGoogleUser = user?.providerData.any((p) => p.providerId == 'google.com') ?? false;
 
     return Scaffold(

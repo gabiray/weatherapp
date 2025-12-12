@@ -6,12 +6,14 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../services/favorites_service.dart';
 
+// --- CLASA DE REZULTAT PENTRU PAGINA HARTĂ ---
 class MapLocationResult {
   final LatLng coords;
   final String? name;
   MapLocationResult({required this.coords, this.name});
 }
 
+// --- WIDGET PENTRU PAGINA HARTĂ ---
 class WeatherMapPage extends StatefulWidget {
   final void Function(LatLng coords, String? name)? onSelection;
   const WeatherMapPage({super.key, this.onSelection});
@@ -20,6 +22,7 @@ class WeatherMapPage extends StatefulWidget {
   State<WeatherMapPage> createState() => _WeatherMapPageState();
 }
 
+// --- PAGINA HARTĂ PENTRU SELECȚIA ORAȘULUI ---
 class _WeatherMapPageState extends State<WeatherMapPage> {
   LatLng _center = const LatLng(44.43, 26.10); // Default: București
   LatLng? _selected;
@@ -33,6 +36,7 @@ class _WeatherMapPageState extends State<WeatherMapPage> {
   final FavoritesService _favService = FavoritesService();
   final TextEditingController _searchController = TextEditingController();
 
+  // SETĂM POZIȚIA INIȚIALĂ A HARTII
   @override
   void initState() {
     super.initState();
@@ -82,8 +86,8 @@ class _WeatherMapPageState extends State<WeatherMapPage> {
   Future<void> _searchCity(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
-    FocusScope.of(context).unfocus();
-
+    FocusScope.of(context).unfocus(); // Ascundem tastatura
+    
     setState(() => _isResolvingName = true);
 
     try {
@@ -109,6 +113,7 @@ class _WeatherMapPageState extends State<WeatherMapPage> {
       final fullName = country != null ? '$name, $country' : name;
       final newLatLng = LatLng(lat, lon);
 
+      // Mutăm harta la noua locație
       _mapController.move(newLatLng, 12.0);
 
       setState(() {
@@ -127,6 +132,7 @@ class _WeatherMapPageState extends State<WeatherMapPage> {
     }
   }
 
+  // --- METODĂ SNACKBAR ---
   void _showSnack(String msg) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 1)));
@@ -215,6 +221,7 @@ class _WeatherMapPageState extends State<WeatherMapPage> {
     }
   }
 
+  // --- CONFIRMĂ SELECȚIA ȘI ÎNCHIDE PAGINA ---
   void _confirmSelection() {
     if (_selected == null) return;
     if (widget.onSelection != null) {
@@ -224,6 +231,7 @@ class _WeatherMapPageState extends State<WeatherMapPage> {
     }
   }
 
+  // --- BUILD WIDGET ---
   @override
   Widget build(BuildContext context) {
     final subtitle = _selected == null

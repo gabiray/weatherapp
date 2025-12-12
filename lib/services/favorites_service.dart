@@ -6,6 +6,7 @@ class FavoriteCity {
   final double lat;
   final double lon;
 
+  // Constructor
   FavoriteCity({required this.name, required this.lat, required this.lon});
 
   // Convertire pentru stocare (JSON)
@@ -15,6 +16,7 @@ class FavoriteCity {
     'lon': lon,
   };
 
+  // Creare din JSON
   factory FavoriteCity.fromJson(Map<String, dynamic> json) {
     return FavoriteCity(
       name: json['name'],
@@ -24,23 +26,24 @@ class FavoriteCity {
   }
 }
 
+// Serviciu pentru gestionarea orașelor favorite
 class FavoritesService {
   static const String _key = 'favorite_cities';
 
   Future<List<FavoriteCity>> getFavorites() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? data = prefs.getString(_key);
+    final prefs = await SharedPreferences.getInstance(); 
+    final String? data = prefs.getString(_key); 
     if (data == null) return [];
     
     final List<dynamic> decoded = jsonDecode(data);
-    return decoded.map((e) => FavoriteCity.fromJson(e)).toList();
+    return decoded.map((e) => FavoriteCity.fromJson(e)).toList(); 
   }
 
   Future<void> addFavorite(FavoriteCity city) async {
     final list = await getFavorites();
     // Evităm duplicatele
     if (!list.any((e) => e.name == city.name && e.lat == city.lat)) {
-      list.add(city);
+      list.add(city); 
       await _saveList(list);
     }
   }
@@ -51,8 +54,9 @@ class FavoritesService {
     await _saveList(list);
   }
 
+  // Salvare listă în SharedPreferences
   Future<void> _saveList(List<FavoriteCity> list) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance(); 
     final String encoded = jsonEncode(list.map((e) => e.toJson()).toList());
     await prefs.setString(_key, encoded);
   }
