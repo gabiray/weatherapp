@@ -14,6 +14,23 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>weatherapp</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>WeatherApp folosește locația pentru a afișa vremea din zona ta.</string>
+	<key>GIDClientID</key>
+	<string>195635447559-lqvvpiehvnp8nokato4k4fqt990fp58l.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>195635447559-b4b7hgak5d4mde71djbopn6qa8607ovg.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.195635447559-lqvvpiehvnp8nokato4k4fqt990fp58l</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

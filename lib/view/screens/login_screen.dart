@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
-import 'home_screen.dart';
-
 import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -21,6 +19,25 @@ class _LoginScreenState extends State<LoginScreen> {
   final AuthService _authService = AuthService();
 
   bool _isPasswordVisible = false;
+  bool _isLoading = false;
+
+  void _showError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+    );
+  }
+
+  Future<void> _signInWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      await _authService.signInWithGoogle();
+    } catch (error) {
+      _showError(error);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 height: 50,
                 child: ElevatedButton(
                   // Login action
-                  onPressed: () async {
+                  onPressed: _isLoading ? null : () async {
                     final email = _emailController.text.trim();
                     final password = _passwordController.text.trim();
                      
@@ -108,19 +125,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       return;
                     }
 
-                    // Call Firebase Auth login
+                    setState(() => _isLoading = true);
                     final result = await _authService.signIn(email: email, password: password);
+                    if (!context.mounted) return;
+                    setState(() => _isLoading = false);
 
-                    if (result == null) {
-                    // Success → go to HomeScreen
-                      if (mounted) {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (context) => const WeatherScreen()),
-                        );
-                      }
-                    } else {
-                      // Error → show message
+                    if (result != null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text(result)),
                       );
@@ -158,29 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Sign in with Google',
                     style: TextStyle(fontSize: 16, color: Colors.black87),
                   ),
-                  onPressed: () async {
-  // 1. Arată un indicator de încărcare dacă vrei
-  
-  // 2. Cheamă funcția
-  /* final user = await _authService.signInWithGoogle();
-  
-  if (user != null) {
-    // 3. Navighează la Home dacă a reușit
-    if (mounted) {
-       Navigator.pushReplacement(
-         context, 
-         MaterialPageRoute(builder: (context) => const WeatherScreen())
-       );
-    }
-  } else {
-    // 4. A apărut o eroare sau utilizatorul a dat cancel
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Google Sign In failed or cancelled')),
-      );
-    }
-  } */
-},
+                  onPressed: _isLoading ? null : _signInWithGoogle,
                   style: OutlinedButton.styleFrom(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

@@ -1,14 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
-// import 'package:google_sign_in/google_sign_in.dart'; // <--- 1. Import Nou
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
-  // Instanța FirebaseAuth
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  static final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  static Future<void>? _googleInitialization;
 
-  // --- GOOGLE SIGN-IN ---
-  // final GoogleSignIn _googleSignIn = GoogleSignIn(); // <--- 2. Instanță GoogleSignIn
-
-  // Flux de autentificare
   Stream<User?> get authStateChanges => _auth.authStateChanges();
   User? get currentUser => _auth.currentUser;
 
@@ -35,38 +32,31 @@ class AuthService {
     }
   }
 
-  // --- METODA NOUĂ PENTRU GOOGLE ---
-  /*
-  Future<User?> signInWithGoogle() async {
+  Future<UserCredential> signInWithGoogle() async {
     try {
-      // A. Deschide fereastra de login Google
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      
-      // Dacă utilizatorul a dat "Cancel" la fereastră
-      if (googleUser == null) return null;
+      _googleInitialization ??= _googleSignIn.initialize();
+      await _googleInitialization;
 
-      // B. Obține token-urile de autentificare de la Google
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-
-      // C. Creează o credențială pentru Firebase
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
+      final googleUser = await _googleSignIn.authenticate();
+      final googleAuth = googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
         idToken: googleAuth.idToken,
       );
-
-      // D. Autentifică-te în Firebase cu acea credențială
-      final UserCredential userCredential = await _auth.signInWithCredential(credential);
-      
-      return userCredential.user;
-    } catch (e) {
-      print("Eroare la Google Sign In: $e");
-      return null;
+      return _auth.signInWithCredential(credential);
+    } on FirebaseAuthException {
+      rethrow;
+    } on GoogleSignInException catch (e) {
+      throw FirebaseAuthException(
+        code: 'google-sign-in-failed',
+        message: e.description ?? 'Autentificarea cu Google a eșuat.',
+      );
     }
   }
-  */
 
   Future<void> signOut() async {
-    // await _googleSignIn.signOut(); // <--- Important: Deconectează și Google
+    _googleInitialization ??= _googleSignIn.initialize();
+    await _googleInitialization;
+    await _googleSignIn.signOut();
     await _auth.signOut();
   }
 

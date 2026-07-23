@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'weather_map_page.dart';
 import 'profile_screen.dart';
 import 'favorites_screen.dart';
@@ -15,13 +16,18 @@ class WeatherScreen extends StatefulWidget {
 }
 
 class _WeatherScreenState extends State<WeatherScreen> {
+  static const _weatherCacheKey = 'weather_cache_response';
+  static const _weatherCacheLatKey = 'weather_cache_lat';
+  static const _weatherCacheLonKey = 'weather_cache_lon';
+  static const _weatherCacheLabelKey = 'weather_cache_label';
+
   // --- STATE VARIABLES ---
   // Index-ul curent pentru BottomNavigationBar
   int _currentIndex = 0;
 
   // Controller pentru câmpul de căutare
   final TextEditingController _searchController = TextEditingController();
-  bool _isLoading = false; 
+  bool _isLoading = false;
   String? _error;
 
   // Datele meteo
@@ -35,7 +41,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
   double? _todayHigh;
   double? _todayLow;
   String _timeLabel = '--:--';
-  
+
   List<_DailyForecast> _dailyForecast = [];
   List<_HourlyForecast> _hourlyForecast = [];
 
@@ -43,19 +49,49 @@ class _WeatherScreenState extends State<WeatherScreen> {
   @override
   void initState() {
     super.initState();
-    _determinePosition();
+    _initializeWeather();
+  }
+
+  Future<void> _initializeWeather() async {
+    final hasCachedWeather = await _loadCachedWeather();
+    await _determinePosition(hasCachedWeather: hasCachedWeather);
+  }
+
+  Future<bool> _loadCachedWeather() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rawWeather = prefs.getString(_weatherCacheKey);
+      final lat = prefs.getDouble(_weatherCacheLatKey);
+      final lon = prefs.getDouble(_weatherCacheLonKey);
+      if (rawWeather == null || lat == null || lon == null) return false;
+
+      final cachedWeather = jsonDecode(rawWeather) as Map<String, dynamic>;
+      await _loadWeatherByCoords(
+        lat: lat,
+        lon: lon,
+        labelFromGeo: prefs.getString(_weatherCacheLabelKey),
+        cachedWeather: cachedWeather,
+        showLoading: false,
+      );
+      return true;
+    } catch (_) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_weatherCacheKey);
+      return false;
+    }
   }
 
   // --- LOGICĂ GPS ---
-  Future<void> _determinePosition() async {
-    setState(() => _isLoading = true);
+  Future<void> _determinePosition({bool hasCachedWeather = false}) async {
+    if (mounted) setState(() => _isLoading = true);
     bool serviceEnabled;
     LocationPermission permission;
 
     // Verificăm dacă serviciile de locație sunt activate
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      _searchAndLoadWeather('Bucuresti');
+      if (!hasCachedWeather) await _searchAndLoadWeather('Bucuresti');
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
 
@@ -64,39 +100,75 @@ class _WeatherScreenState extends State<WeatherScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        _searchAndLoadWeather('Bucuresti');
+        if (!hasCachedWeather) await _searchAndLoadWeather('Bucuresti');
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
     }
     if (permission == LocationPermission.deniedForever) {
-      _searchAndLoadWeather('Bucuresti');
+      if (!hasCachedWeather) await _searchAndLoadWeather('Bucuresti');
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
 
+    var hasWeather = hasCachedWeather;
     try {
-      Position position = await Geolocator.getCurrentPosition();
+      final lastPosition = await Geolocator.getLastKnownPosition();
+      if (!hasWeather && lastPosition != null) {
+        await _loadWeatherByCoords(
+          lat: lastPosition.latitude,
+          lon: lastPosition.longitude,
+          labelFromGeo: 'Locația ta',
+        );
+        hasWeather = true;
+        await _updateCityNameFromCoords(
+          lastPosition.latitude,
+          lastPosition.longitude,
+        );
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
       await _loadWeatherByCoords(
         lat: position.latitude,
         lon: position.longitude,
-        labelFromGeo: 'Locația Ta',
+        labelFromGeo: 'Locația ta',
       );
+      hasWeather = true;
 
-      // Actualizăm numele orașului pe baza coordonatelor
-      _updateCityNameFromCoords(position.latitude, position.longitude);
-    } catch (e) {
-      _searchAndLoadWeather('Bucuresti');
+      await _updateCityNameFromCoords(position.latitude, position.longitude);
+    } catch (_) {
+      if (!hasWeather) await _searchAndLoadWeather('Bucuresti');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _updateCityNameFromCoords(double lat, double lon) async {
     try {
-      final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lon&format=jsonv2');
-      final res = await http.get(url, headers: {'User-Agent': 'WeatherApp/1.0'});
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?lat=$lat&lon=$lon&format=jsonv2',
+      );
+      final res = await http.get(
+        url,
+        headers: {'User-Agent': 'WeatherApp/1.0'},
+      );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final address = data['address'];
-        String city = address['city'] ?? address['town'] ?? address['village'] ?? 'Locația Ta';
+        final String city =
+            address['city'] ??
+            address['town'] ??
+            address['village'] ??
+            'Locația ta';
+        if (!mounted) return;
         setState(() => _locationLabel = city);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_weatherCacheLabelKey, city);
       }
     } catch (_) {}
   }
@@ -119,7 +191,9 @@ class _WeatherScreenState extends State<WeatherScreen> {
       final geoRes = await http.get(geoUrl);
       if (geoRes.statusCode != 200) throw Exception('Geocoding failed');
       final geoJson = jsonDecode(geoRes.body);
-      if (geoJson['results'] == null || geoJson['results'].isEmpty) throw Exception('Orașul nu a fost găsit');
+      if (geoJson['results'] == null || geoJson['results'].isEmpty) {
+        throw Exception('Orașul nu a fost găsit');
+      }
 
       final result = geoJson['results'][0];
       final double lat = (result['latitude'] as num).toDouble();
@@ -144,29 +218,35 @@ class _WeatherScreenState extends State<WeatherScreen> {
     required double lat,
     required double lon,
     String? labelFromGeo,
+    Map<String, dynamic>? cachedWeather,
+    bool showLoading = true,
   }) async {
+    if (!mounted) return;
     setState(() {
-      _isLoading = true;
+      _isLoading = showLoading;
       _error = null;
     });
     try {
+      late final Map<String, dynamic> weatherJson;
+      if (cachedWeather != null) {
+        weatherJson = cachedWeather;
+      } else {
+        final weatherUrl = Uri.parse(
+          'https://api.open-meteo.com/v1/forecast'
+          '?latitude=$lat&longitude=$lon'
+          '&current_weather=true'
+          '&hourly=temperature_2m,weathercode,relativehumidity_2m,surface_pressure,is_day'
+          '&daily=temperature_2m_max,temperature_2m_min,weathercode,windspeed_10m_max,precipitation_probability_max'
+          '&forecast_days=7'
+          '&timezone=auto',
+        );
+        final weatherRes = await http.get(weatherUrl);
+        if (weatherRes.statusCode != 200) {
+          throw Exception('Weather API failed');
+        }
+        weatherJson = jsonDecode(weatherRes.body) as Map<String, dynamic>;
+      }
 
-      // Apel API pentru date meteo
-      final weatherUrl = Uri.parse(
-        'https://api.open-meteo.com/v1/forecast'
-        '?latitude=$lat&longitude=$lon'
-        '&current_weather=true'
-        '&hourly=temperature_2m,weathercode,relativehumidity_2m,surface_pressure,is_day'
-        '&daily=temperature_2m_max,temperature_2m_min,weathercode,windspeed_10m_max,precipitation_probability_max'
-        '&forecast_days=7'
-        '&timezone=auto',
-      );
-      final weatherRes = await http.get(weatherUrl);
-      if (weatherRes.statusCode != 200) throw Exception('Weather API failed');
-
-      // Procesare răspuns
-      final weatherJson = jsonDecode(weatherRes.body);
-      
       // 1. Current Weather
       final current = weatherJson['current_weather'];
       final double temp = (current['temperature'] as num).toDouble();
@@ -174,12 +254,13 @@ class _WeatherScreenState extends State<WeatherScreen> {
       final double wind = (current['windspeed'] as num).toDouble();
 
       // Aflam daca e zi sau noapte chiar acum (1 = zi, 0 = noapte)
-      final int isDayNow = (current['is_day'] as num).toInt(); 
-      
+      final int isDayNow = (current['is_day'] as num).toInt();
+
       String niceTime = '--:--';
       if (current['time'] != null) {
         final d = DateTime.parse(current['time']);
-        niceTime = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+        niceTime =
+            '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
       }
 
       // 2. Hourly Data Logic
@@ -187,12 +268,13 @@ class _WeatherScreenState extends State<WeatherScreen> {
       final List hTimes = hourlyData['time'];
       final List hTemps = hourlyData['temperature_2m'];
       final List hCodes = hourlyData['weathercode'];
-      final List hIsDay = hourlyData['is_day'] ?? []; 
-      
+      final List hIsDay = hourlyData['is_day'] ?? [];
+
       final now = DateTime.now();
       int startIndex = 0;
-      for(int i=0; i<hTimes.length; i++) {
-        if (DateTime.parse(hTimes[i]).hour == now.hour && DateTime.parse(hTimes[i]).day == now.day) {
+      for (int i = 0; i < hTimes.length; i++) {
+        if (DateTime.parse(hTimes[i]).hour == now.hour &&
+            DateTime.parse(hTimes[i]).day == now.day) {
           startIndex = i;
           break;
         }
@@ -200,32 +282,38 @@ class _WeatherScreenState extends State<WeatherScreen> {
 
       final List<_HourlyForecast> tempHourlyList = [];
       for (int i = startIndex; i < startIndex + 24 && i < hTimes.length; i++) {
-         final dt = DateTime.parse(hTimes[i]);
-         final tTemp = (hTemps[i] as num).toDouble();
-         final tCode = (hCodes[i] as num).toInt();
-         
-         // Luam flag-ul de zi/noapte specific orei respective
-         final bool isHourDay = (hIsDay.isNotEmpty && i < hIsDay.length) 
-            ? (hIsDay[i] == 1) 
+        final dt = DateTime.parse(hTimes[i]);
+        final tTemp = (hTemps[i] as num).toDouble();
+        final tCode = (hCodes[i] as num).toInt();
+
+        // Luam flag-ul de zi/noapte specific orei respective
+        final bool isHourDay = (hIsDay.isNotEmpty && i < hIsDay.length)
+            ? (hIsDay[i] == 1)
             : true; // Fallback
-         
-         final String hourLabel = '${dt.hour.toString().padLeft(2,'0')}:00';
-         
-         tempHourlyList.add(_HourlyForecast(
-           time: i == startIndex ? 'Acum' : hourLabel,
-           temp: '${tTemp.round()}°',
-           icon: _emojiForCode(tCode, isDay: isHourDay), 
-         ));
+
+        final String hourLabel = '${dt.hour.toString().padLeft(2, '0')}:00';
+
+        tempHourlyList.add(
+          _HourlyForecast(
+            time: i == startIndex ? 'Acum' : hourLabel,
+            temp: '${tTemp.round()}°',
+            icon: _emojiForCode(tCode, isDay: isHourDay),
+          ),
+        );
       }
 
       // 3. Extra details
       int? humidity;
       double? pressure;
-      if (hourlyData['relativehumidity_2m'] != null && hourlyData['relativehumidity_2m'].isNotEmpty) {
-        humidity = (hourlyData['relativehumidity_2m'][startIndex] as num).toInt();
+      if (hourlyData['relativehumidity_2m'] != null &&
+          hourlyData['relativehumidity_2m'].isNotEmpty) {
+        humidity = (hourlyData['relativehumidity_2m'][startIndex] as num)
+            .toInt();
       }
-      if (hourlyData['surface_pressure'] != null && hourlyData['surface_pressure'].isNotEmpty) {
-        pressure = (hourlyData['surface_pressure'][startIndex] as num).toDouble();
+      if (hourlyData['surface_pressure'] != null &&
+          hourlyData['surface_pressure'].isNotEmpty) {
+        pressure = (hourlyData['surface_pressure'][startIndex] as num)
+            .toDouble();
       }
 
       // 4. Daily Data
@@ -247,28 +335,31 @@ class _WeatherScreenState extends State<WeatherScreen> {
         final double tMin = (dMinTemps[i] as num).toDouble();
         final double wSpeed = (dWinds[i] as num).toDouble();
         final int rainProb = (dRains[i] as num).toInt();
-        
+
         final String dayLabel = i == 0 ? 'Azi' : weekdayNames[date.weekday - 1];
 
-        tempDailyList.add(_DailyForecast(
-          day: dayLabel,
-          fullDate: '${date.day}/${date.month}',
-          icon: _emojiForCode(wCode, isDay: true), 
-          high: '${tMax.round()}°',
-          low: '${tMin.round()}°',
-          description: _descriptionForCode(wCode),
-          windSpeed: '${wSpeed.round()} km/h',
-          rainChance: '$rainProb%',
-        ));
+        tempDailyList.add(
+          _DailyForecast(
+            day: dayLabel,
+            fullDate: '${date.day}/${date.month}',
+            icon: _emojiForCode(wCode, isDay: true),
+            high: '${tMax.round()}°',
+            low: '${tMin.round()}°',
+            description: _descriptionForCode(wCode),
+            windSpeed: '${wSpeed.round()} km/h',
+            rainChance: '$rainProb%',
+          ),
+        );
       }
 
       // Actualizăm starea cu noile date
+      if (!mounted) return;
       setState(() {
         _locationLabel = labelFromGeo ?? 'Locație Custom';
         _currentTemp = temp;
         _todayDescription = _descriptionForCode(code);
-        
-        _todayEmoji = _emojiForCode(code, isDay: isDayNow == 1); 
+
+        _todayEmoji = _emojiForCode(code, isDay: isDayNow == 1);
         _windSpeed = wind;
         _humidity = humidity;
         _pressure = pressure;
@@ -278,10 +369,25 @@ class _WeatherScreenState extends State<WeatherScreen> {
         _dailyForecast = tempDailyList;
         _hourlyForecast = tempHourlyList;
       });
+
+      if (cachedWeather == null) {
+        final prefs = await SharedPreferences.getInstance();
+        await Future.wait([
+          prefs.setString(_weatherCacheKey, jsonEncode(weatherJson)),
+          prefs.setDouble(_weatherCacheLatKey, lat),
+          prefs.setDouble(_weatherCacheLonKey, lon),
+          prefs.setString(
+            _weatherCacheLabelKey,
+            labelFromGeo ?? 'Locație personalizată',
+          ),
+        ]);
+      }
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted && cachedWeather == null) {
+        setState(() => _error = e.toString());
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -289,7 +395,11 @@ class _WeatherScreenState extends State<WeatherScreen> {
   // Callback când se selectează o locație pe hartă
   void _onMapLocationSelected(LatLng coords, String? name) {
     setState(() => _currentIndex = 0);
-    _loadWeatherByCoords(lat: coords.latitude, lon: coords.longitude, labelFromGeo: name);
+    _loadWeatherByCoords(
+      lat: coords.latitude,
+      lon: coords.longitude,
+      labelFromGeo: name,
+    );
   }
 
   // Callback când se selectează un oraș favorit
@@ -298,14 +408,16 @@ class _WeatherScreenState extends State<WeatherScreen> {
     _loadWeatherByCoords(lat: lat, lon: lon, labelFromGeo: name);
   }
 
-  // --- HELPERE ICONIȚE --- 
+  // --- HELPERE ICONIȚE ---
   // Acum accepta parametrul `isDay` (default true)
   String _emojiForCode(int code, {bool isDay = true}) {
     if (code == 0) {
       return isDay ? '☀️' : '🌙'; // Senin: Soare sau Luna
     }
     if (code == 1 || code == 2 || code == 3) {
-      return isDay ? '⛅' : '☁️'; // Nori: Soare cu nori sau Nori simpli (noaptea)
+      return isDay
+          ? '⛅'
+          : '☁️'; // Nori: Soare cu nori sau Nori simpli (noaptea)
     }
     if (code <= 48) return '🌫'; // Ceata
     if (code <= 67) return '🌦'; // Ploaie
@@ -348,9 +460,19 @@ class _WeatherScreenState extends State<WeatherScreen> {
               child: Column(
                 children: [
                   const SizedBox(height: 12),
-                  Container(height: 5, width: 40, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10))),
+                  Container(
+                    height: 5,
+                    width: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                   const SizedBox(height: 20),
-                  const Text("Prognoza pe 7 Zile", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  const Text(
+                    "Prognoza pe 7 Zile",
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 10),
                   Expanded(
                     child: ListView.builder(
@@ -359,22 +481,50 @@ class _WeatherScreenState extends State<WeatherScreen> {
                       itemBuilder: (context, index) {
                         final item = _dailyForecast[index];
                         return ExpansionTile(
-                          leading: Text(item.icon, style: const TextStyle(fontSize: 24)),
-                          title: Text('${item.day} • ${item.description}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                          leading: Text(
+                            item.icon,
+                            style: const TextStyle(fontSize: 24),
+                          ),
+                          title: Text(
+                            '${item.day} • ${item.description}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                           subtitle: Text('Max: ${item.high}  Min: ${item.low}'),
                           children: [
                             Container(
                               padding: const EdgeInsets.all(16),
                               color: Colors.blue[50],
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
                                 children: [
-                                  Column(children: [const Icon(Icons.water_drop, color: Colors.blue), Text("Ploaie: ${item.rainChance}")]),
-                                  Column(children: [const Icon(Icons.air, color: Colors.grey), Text("Vânt: ${item.windSpeed}")]),
-                                  Column(children: [const Icon(Icons.calendar_today, color: Colors.orange), Text(item.fullDate)]),
+                                  Column(
+                                    children: [
+                                      const Icon(
+                                        Icons.water_drop,
+                                        color: Colors.blue,
+                                      ),
+                                      Text("Ploaie: ${item.rainChance}"),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      const Icon(Icons.air, color: Colors.grey),
+                                      Text("Vânt: ${item.windSpeed}"),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      const Icon(
+                                        Icons.calendar_today,
+                                        color: Colors.orange,
+                                      ),
+                                      Text(item.fullDate),
+                                    ],
+                                  ),
                                 ],
                               ),
-                            )
+                            ),
                           ],
                         );
                       },
@@ -397,7 +547,11 @@ class _WeatherScreenState extends State<WeatherScreen> {
           padding: EdgeInsets.symmetric(horizontal: 4.0),
           child: Text(
             "Următoarele 24h",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -417,10 +571,10 @@ class _WeatherScreenState extends State<WeatherScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 8,
                       offset: const Offset(0, 4),
-                    )
+                    ),
                   ],
                 ),
                 child: Column(
@@ -458,11 +612,17 @@ class _WeatherScreenState extends State<WeatherScreen> {
   @override
   Widget build(BuildContext context) {
     // --- MAIN SCAFFOLD ---
-    return Scaffold( 
+    return Scaffold(
       backgroundColor: Colors.blue[50],
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
-          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, -2))]
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 10,
+              offset: Offset(0, -2),
+            ),
+          ],
         ),
         child: BottomNavigationBar(
           backgroundColor: Colors.white,
@@ -472,10 +632,22 @@ class _WeatherScreenState extends State<WeatherScreen> {
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Acasă'),
-            BottomNavigationBarItem(icon: Icon(Icons.favorite_rounded), label: 'Favorite'),
-            BottomNavigationBarItem(icon: Icon(Icons.map_rounded), label: 'Hartă'),
-            BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profil'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_rounded),
+              label: 'Acasă',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.favorite_rounded),
+              label: 'Favorite',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.map_rounded),
+              label: 'Hartă',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_rounded),
+              label: 'Profil',
+            ),
           ],
         ),
       ),
@@ -494,7 +666,8 @@ class _WeatherScreenState extends State<WeatherScreen> {
 
   // --- HOME SCREEN CONTENT ---
   Widget _buildHomeContent() {
-    final bool hasToday = _currentTemp != null; // Verificăm dacă avem date pentru ziua curentă
+    final bool hasToday =
+        _currentTemp != null; // Verificăm dacă avem date pentru ziua curentă
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -509,8 +682,22 @@ class _WeatherScreenState extends State<WeatherScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: const [
-                    Text('Bine ai venit,', style: TextStyle(fontSize: 14, color: Colors.black54, fontWeight: FontWeight.w500)),
-                    Text('WeatherApp', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    Text(
+                      'Bine ai venit,',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.black54,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      'WeatherApp',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
                   ],
                 ),
                 const Icon(Icons.cloud, color: Colors.blueAccent, size: 40),
@@ -520,67 +707,92 @@ class _WeatherScreenState extends State<WeatherScreen> {
 
             // Search + GPS
             Row(
-  children: [
-    Expanded(
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-             BoxShadow(color: Colors.black12, blurRadius: 10, offset: const Offset(0, 4))
-          ]
-        ),
-        child: TextField(
-          controller: _searchController,
-          
-          textInputAction: TextInputAction.search, 
-          
-          decoration: InputDecoration(
-            hintText: 'Caută oraș...',
-            hintStyle: const TextStyle(color: Colors.black38),
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                        
-            suffixIcon: IconButton(
-              icon: const Icon(Icons.search, color: Colors.blueAccent),
-              onPressed: () {
-                // Ascundem tastatura cand apasam pe lupa
-                FocusScope.of(context).unfocus(); 
-                _searchAndLoadWeather(_searchController.text);
-              },
-            ),
-          ),
-          
-          onSubmitted: (value) {
-            FocusScope.of(context).unfocus();
-            _searchAndLoadWeather(value);
-          },
-        ),
-      ),
-    ),
-    
-    const SizedBox(width: 10),
-    
-    // Butonul GPS 
-    Container(
-      decoration: BoxDecoration(
-          color: Colors.white, 
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-             BoxShadow(color: Colors.black12, blurRadius: 10, offset: const Offset(0, 4))
-          ]
-      ),
-      child: IconButton(
-        icon: const Icon(Icons.my_location, color: Colors.blueAccent),
-        onPressed: _determinePosition,
-        tooltip: "Locația Mea",
-      ),
-    )
-  ],
-),
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: TextField(
+                      controller: _searchController,
 
-            if (_isLoading) const Padding(padding: EdgeInsets.only(top: 20), child: Center(child: CircularProgressIndicator())),
-            if (_error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_error!, style: const TextStyle(color: Colors.red))),
+                      textInputAction: TextInputAction.search,
+
+                      decoration: InputDecoration(
+                        hintText: 'Caută oraș...',
+                        hintStyle: const TextStyle(color: Colors.black38),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 14,
+                        ),
+
+                        suffixIcon: IconButton(
+                          icon: const Icon(
+                            Icons.search,
+                            color: Colors.blueAccent,
+                          ),
+                          onPressed: () {
+                            // Ascundem tastatura cand apasam pe lupa
+                            FocusScope.of(context).unfocus();
+                            _searchAndLoadWeather(_searchController.text);
+                          },
+                        ),
+                      ),
+
+                      onSubmitted: (value) {
+                        FocusScope.of(context).unfocus();
+                        _searchAndLoadWeather(value);
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 10),
+
+                // Butonul GPS
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.my_location,
+                      color: Colors.blueAccent,
+                    ),
+                    onPressed: _determinePosition,
+                    tooltip: "Locația Mea",
+                  ),
+                ),
+              ],
+            ),
+
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.only(top: 20),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(_error!, style: const TextStyle(color: Colors.red)),
+              ),
 
             const SizedBox(height: 24),
 
@@ -588,8 +800,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
 
             const SizedBox(height: 30),
 
-            if (_hourlyForecast.isNotEmpty) 
-              _buildHourlyList(),
+            if (_hourlyForecast.isNotEmpty) _buildHourlyList(),
 
             const SizedBox(height: 30),
 
@@ -603,10 +814,15 @@ class _WeatherScreenState extends State<WeatherScreen> {
                     backgroundColor: Colors.white,
                     foregroundColor: Colors.blueAccent,
                     elevation: 2,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                   icon: const Icon(Icons.calendar_month),
-                  label: const Text("Vezi Prognoza pe 7 Zile", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  label: const Text(
+                    "Vezi Prognoza pe 7 Zile",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
           ],
@@ -628,7 +844,11 @@ class _WeatherScreenState extends State<WeatherScreen> {
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.blueAccent.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8)),
+          BoxShadow(
+            color: Colors.blueAccent.withValues(alpha: 0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
       child: Column(
@@ -640,9 +860,19 @@ class _WeatherScreenState extends State<WeatherScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(_locationLabel, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text(
+                    _locationLabel,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text('$_timeLabel • $_todayDescription', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  Text(
+                    '$_timeLabel • $_todayDescription',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
                 ],
               ),
               Text(_todayEmoji, style: const TextStyle(fontSize: 32)),
@@ -652,11 +882,22 @@ class _WeatherScreenState extends State<WeatherScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text('${_currentTemp?.round()}°', style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.bold, height: 1)),
+              Text(
+                '${_currentTemp?.round()}°',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 48,
+                  fontWeight: FontWeight.bold,
+                  height: 1,
+                ),
+              ),
               const SizedBox(width: 10),
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
-                child: Text('H:${_todayHigh?.round()}°  L:${_todayLow?.round()}°', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                child: Text(
+                  'H:${_todayHigh?.round()}°  L:${_todayLow?.round()}°',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
               ),
             ],
           ),
@@ -668,7 +909,7 @@ class _WeatherScreenState extends State<WeatherScreen> {
               _buildDetailItem(Icons.water_drop_outlined, '$_humidity%'),
               _buildDetailItem(Icons.speed, '${_pressure?.round()} hPa'),
             ],
-          )
+          ),
         ],
       ),
     );
@@ -680,7 +921,14 @@ class _WeatherScreenState extends State<WeatherScreen> {
       children: [
         Icon(icon, color: Colors.white70, size: 16),
         const SizedBox(width: 6),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
       ],
     );
   }

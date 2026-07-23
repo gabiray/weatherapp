@@ -84,7 +84,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   borderRadius: BorderRadius.circular(24), // Rotunjit pe toate părțile
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.blueAccent.withOpacity(0.1), // Umbră ușor albăstruie
+                      color: Colors.blueAccent.withValues(alpha: 0.1), // Umbră ușor albăstruie
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -151,7 +151,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
+                        color: Colors.black.withValues(alpha: 0.05),
                         blurRadius: 15,
                         offset: const Offset(0, 5),
                       ),
@@ -173,7 +173,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             borderSide: BorderSide.none,
                           ),
                           filled: true,
-                          fillColor: Colors.blue[50]!.withOpacity(0.5),
+                          fillColor: Colors.blue[50]!.withValues(alpha: 0.5),
                           contentPadding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                       ),
