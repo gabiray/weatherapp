@@ -17,7 +17,7 @@ hourly forecasts, and seven-day forecasts for locations around the world.
 - Email/password and Google authentication with Firebase
 - Favorite locations synchronized through Cloud Firestore
 - Local weather cache for faster startup and offline fallback
-- Android and iOS configuration
+- Android support and initial iOS configuration
 
 ## Download
 
