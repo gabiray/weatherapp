@@ -1,7 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
-import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -50,12 +49,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _handleLogout() async {
     await _authService.signOut();
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-        (route) => false,
-      );
-    }
   }
 
   @override
