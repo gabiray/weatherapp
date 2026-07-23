@@ -339,7 +339,7 @@ class _WeatherMapPageState extends State<WeatherMapPage> {
                               onPressed: _toggleFavorite, // Apelăm funcția de toggle
                               style: IconButton.styleFrom(
                                 backgroundColor: _isLocationFavorite 
-                                    ? Colors.pinkAccent.withOpacity(0.1) // Fundal roz dacă e favorit
+                                    ? Colors.pinkAccent.withValues(alpha: 0.1) // Fundal roz dacă e favorit
                                     : Colors.grey[100], // Fundal gri dacă nu e
                               ),
                               icon: Icon(

@@ -140,14 +140,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
                   try {
                     await AuthService().signUp(email, password);
+                    if (!context.mounted) return;
 
-                    // If successful, navigate back to login or home
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Account created successfully!')),
                     );
-
-                    Navigator.pop(context); // back to login
+                    Navigator.of(context).popUntil((route) => route.isFirst);
                   } catch (e) {
+                    if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text('Sign up failed: $e')),
                     );

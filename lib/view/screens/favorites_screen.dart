@@ -60,7 +60,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.favorite_border, size: 60, color: Colors.blueAccent.withOpacity(0.5)),
+                      Icon(Icons.favorite_border, size: 60, color: Colors.blueAccent.withValues(alpha: 0.5)),
                       const SizedBox(height: 16),
                       const Text("Nu ai nicio locație salvată.", style: TextStyle(color: Colors.grey)),
                     ],

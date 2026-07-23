@@ -28,6 +28,8 @@ migrate_working_dir/
 **/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins-dependencies
+.kotlin/
+**/.kotlin/
 .pub-cache/
 .pub/
 /build/
@@ -43,3 +45,22 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local secrets and signing credentials
+.env
+.env.*
+!.env.example
+**/key.properties
+**/*.jks
+**/*.keystore
+**/service-account*.json
+**/serviceAccount*.json
+**/*.p8
+**/*.p12
+**/*.mobileprovision
+
+# Local tool state
+/.agents/
+/.firebase/
+firebase-debug.log
+firebase-debug.*.log
